@@ -69,7 +69,7 @@ default RELME does not.
 
 1. Write the model for `Vectorization="Full"` (see the API reference): one model call
    for many groups instead of one per group.
-2. For ODE models use a compiled SUND model via `sund_model` (batched with containers),
+2. For ODE models use a compiled SUND model via `sund_model` (subjects in parallel),
    or `ode_model` with a vectorised right-hand side. `ode_model` solves all subjects
    as one system and is the faster of the two for SAEM and for LME with many subjects;
    SUND for FOCE, for LME with few subjects, and for inputs such as doses (activities)

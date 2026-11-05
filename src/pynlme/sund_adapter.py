@@ -48,11 +48,21 @@ model: an input per kg times a body-weight parameter set from V.
 With Vectorization="Full" the parameter sets of a model call (subjects, MCMC
 chains, finite-difference perturbations) are simulated in batches: one SUND
 simulation holds ``batch_size`` copies of the model in separate containers.
-The integrator treats a batch as one system with a dense linear solver, so
-batches beyond a few dozen copies get slower than separate simulations; 16
-was fastest on the validation model.
+
+By default (``split_components=True``) each copy has its own integrator, and the
+copies run in parallel on ``threads`` threads. A subject's solution then does not
+depend on the other subjects' parameters (their sampling times still enter, within
+the tolerance, as a batch is read out at all its times), and an integrator failure
+affects only that subject.
+
+With ``split_components=False`` the copies of a batch are integrated as one coupled
+system on one thread: they share their steps and a dense linear solver. Small
+coupled batches are the cheapest per subject on non-stiff models (use
+``batch_size`` 8-16); on stiff or larger models the linear solver makes them slower
+than separate integrators.
 """
 
+import os
 from collections.abc import Sequence
 
 import numpy as np
@@ -67,12 +77,14 @@ def sund_model(
     t0: float = 0.0,
     rel_tol: float = 1e-10,
     abs_tol: float = 1e-12,
-    batch_size: int = 16,
+    batch_size: int | None = None,
     time_unit: str | None = None,
     feature_column: int = 1,
     activities=None,
     activity_column: int | None = None,
     method: str = "bdf",
+    split_components: bool = True,
+    threads: int | str | None = None,
 ):
     """Build a model function from an installed SUND model.
 
@@ -95,8 +107,11 @@ def sund_model(
     rel_tol, abs_tol : float
         Integrator tolerances. Tighter than SUND's defaults because nlmefit
         differentiates the model numerically.
-    batch_size : int
-        Parameter sets per batched simulation (model name only).
+    batch_size : int, optional
+        Parameter sets per batched simulation (model name only). Default: 64 with
+        ``split_components``, otherwise 16. A batch is read out at the times of all
+        its subjects, so with different sampling times per subject large batches
+        get slow; with the same times everywhere larger batches are slightly faster.
     time_unit : str, optional
         Simulation time unit; defaults to the model's.
     feature_column : int
@@ -112,7 +127,15 @@ def sund_model(
     method : {"bdf", "adams"}
         The integrator's method. "bdf" (SUND's default) suits stiff models;
         "adams" is faster and more accurate for non-stiff ones (3 times faster on
-        the Michaelis-Menten PK model, batched).
+        the Michaelis-Menten PK model, in coupled batches).
+    split_components : bool
+        True: each model copy of a batch has its own integrator, and the copies run
+        in parallel. False: the copies of a batch are integrated as one coupled
+        system on one thread (see the module docstring).
+    threads : int or "all", optional
+        Threads per simulation with ``split_components``. Default: the environment
+        variable ``SUND_NUM_THREADS`` if set, otherwise all CPU cores. Use 1 when
+        running several fits in parallel, to not oversubscribe the cores.
 
     Returns
     -------
@@ -127,6 +150,16 @@ def sund_model(
     if method not in methods:
         raise ValueError(f"method must be 'bdf' or 'adams', not {method!r}")
     options = {"rel_tol": rel_tol, "abs_tol": abs_tol, "method": methods[method]}
+    if batch_size is None:
+        batch_size = 64 if split_components else 16
+    if threads is None and "SUND_NUM_THREADS" not in os.environ:
+        threads = "all"
+    # SUND's number of threads is process-wide: set for each simulation (below), so
+    # that models in a process keep their own. This also checks the value now.
+    previous_threads = sund.get_number_of_threads()
+    sund.set_number_of_threads(threads)
+    sund.set_number_of_threads(previous_threads)
+    split = {"split_components": split_components}
     if activities is not None and not isinstance(model, str):
         raise ValueError(
             "activities need the model as the name of an installed SUND model"
@@ -135,7 +168,7 @@ def sund_model(
         single = sund.load_model(model)
         model_class = sund.import_model(model)
         unit = time_unit or single.time_unit
-        reference = sund.Simulation(models=[single], time_unit=unit)
+        reference = sund.Simulation(models=[single], time_unit=unit, **split)
     else:
         reference, model_class, unit = model, None, None
         batch_size = 1
@@ -202,6 +235,7 @@ def sund_model(
                 models=[sund.load_model(model)],
                 activities=as_list(acts),
                 time_unit=unit,
+                **split,
             )
             sim.set_options(options)
             activity_sims[key] = sim
@@ -221,6 +255,7 @@ def sund_model(
                 models=[model_class(container=c) for c in containers],
                 activities=acts,
                 time_unit=unit,
+                **split,
             )
             sim.set_options(options)
             activity_sims["built", keys] = sim
@@ -230,7 +265,7 @@ def sund_model(
         """A simulation holding k model copies (cached)."""
         if k not in batches:
             copies = [model_class(container=f"pynlme{j}") for j in range(k)]
-            sim = sund.Simulation(models=copies, time_unit=unit)
+            sim = sund.Simulation(models=copies, time_unit=unit, **split)
             sim.set_options(options)
             batches[k] = sim
         return batches[k]
@@ -240,15 +275,20 @@ def sund_model(
         k = len(P)
         grid = times if times[0] == t0 else np.concatenate([[t0], times])
         sim = simulation(k) if sim is None else sim
+        previous = sund.get_number_of_threads()
+        sund.set_number_of_threads(threads)
         try:
+            # If the integrator fails (e.g. a stiff system at extreme parameters):
+            # non-finite predictions for the failed models, which the fitting
+            # methods reject like any other step where the model is not finite.
             sim.simulate(
-                time_vector=grid, parameter_values=P.ravel(), state_values=X0.ravel()
+                time_vector=grid,
+                parameter_values=P.ravel(),
+                state_values=X0.ravel(),
+                on_failure="nan",
             )
-        except RuntimeError:
-            # The integrator failed (e.g. a stiff system at extreme parameters):
-            # non-finite predictions, which the fitting methods reject like any
-            # other step where the model is not finite.
-            return np.full((len(times), k, len(feature_index)), np.nan)
+        finally:
+            sund.set_number_of_threads(previous)
         # Columns: model copy j, feature i at j * n_f + i.
         values = np.asarray(sim.feature_values)[:, : k * n_f].reshape(
             len(grid), k, n_f
