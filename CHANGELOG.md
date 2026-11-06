@@ -16,8 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `sund_model`: by default each subject has its own integrator (`split_components=True`)
   and subjects run in parallel (`threads`, default `SUND_NUM_THREADS` or all CPU cores),
   in batches of 64. A subject's solution no longer depends on the parameters of the
-  others in its batch. `split_components=False` gives SUND's coupled batches as before (`batch_size` 16, one
-  thread), the cheapest per subject on small non-stiff models.
+  others in its batch. `split_components=False` gives SUND's coupled batches as before
+  (`batch_size` 16, one thread), the cheapest per subject on small non-stiff models.
 - `sund_model`: an integrator failure gives non-finite predictions only for that
   subject with `split_components=True`, not for its whole batch.
 
