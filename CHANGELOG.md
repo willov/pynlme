@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.5.2] - unreleased
 
+### Fixed
+
+- `nlmefitsa(compat="r")` and `pynlme.r.saemix` ran one MCMC chain by default, on the
+  belief that this is saemix's default. saemix runs ceiling(50/N) chains for N < 50
+  subjects and raises a smaller `nb.chains` to that. pynlme now does the same (a
+  smaller `n_chains` is raised with a warning). With one chain and few subjects SAEM
+  could drift along a direction the data barely determine (a celiac-disease model
+  with 21 patients diverged in about 40% of seeds); with saemix's chains it did not.
+- `nlmefitsa(compat="r")` follows saemix's SAEM where it differed: the burn-in counts
+  towards the annealing iterations, the samples start at `mu + 0.5 N(0, Omega)`, the
+  random-walk scales are adapted once per iteration (the third kernel moves blocks of
+  coordinates as saemix), the constant/proportional error parameter starts at 1 and
+  its SD (not variance) shrinks by at most 3% per iteration while annealing, and
+  there is no limit on how fast the eigenvalues of `Omega` shrink in the second phase
+  (see `variance_limiter`). The default mode is unchanged.
+- `nlmefitsa(ComputeStdErrors=True)` (and `pynlme.r.saemix`, which computes standard
+  errors by default) raised "Singular matrix" when the Fisher information was
+  singular, as after a fit drifted off; the standard errors are now infinite.
+
+### Added
+
+- `nlmefitsa(..., variance_limiter=...)` (`VarianceLimiter`): pynlme's limit on how fast
+  the eigenvalues of `Omega` shrink in the second phase, on by default and off with
+  `compat="r"`; `True`/`False` overrides either. With `compat="r"`,
+  `stats.pynlme_extensions` lists the pynlme-only options that were on (`[]`: saemix's
+  algorithm).
+- `WeakIdentificationWarning`: `nlmefitsa` warns after the fit when the data barely
+  determine a parameter on the log, probit or logit scale (a random-effect SD or a
+  standard error above 6 on that scale). The estimates are not changed.
+
 ### Changed
 
 - The `sund` extra needs SUND 2.13 or newer. SUND 2.13 integrates the containers of a

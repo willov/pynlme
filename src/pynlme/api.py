@@ -16,11 +16,13 @@ Runs on nlmefit/nlmefitsa; every option of those (e.g. ``error_model``,
 ``cov_pattern``, ``compat``, ``options``) can be passed as a keyword.
 """
 
+import warnings
 from collections.abc import Callable, Mapping, Sequence
 
 import numpy as np
 from scipy.special import expit, logit, ndtr, ndtri
 
+from .errors import WeakIdentificationWarning
 from .nlmefit import nlmefit, nlmefitsa
 
 _TRANSFORMS = {None: 0, "none": 0, "identity": 0, "log": 1, "probit": 2, "logit": 3}
@@ -191,7 +193,16 @@ def fit(
         **options,
     }
     if method == "SAEM":
-        beta, psi, stats, b = nlmefitsa(X, y, groups, V, wrapped, beta0, **kwargs)
+        # nlmefitsa's warnings, with the parameters named. (Other warnings are
+        # filtered as usual before they are recorded.)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always", WeakIdentificationWarning)
+            beta, psi, stats, b = nlmefitsa(X, y, groups, V, wrapped, beta0, **kwargs)
+        for w in caught:
+            message = w.message
+            if isinstance(message, WeakIdentificationWarning):
+                message = message.renamed(names)
+            warnings.warn_explicit(message, w.category, w.filename, w.lineno)
     else:
         beta, psi, stats, b = nlmefit(
             X, y, groups, V, wrapped, beta0, approximation_type=method, **kwargs

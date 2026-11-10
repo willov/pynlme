@@ -7,10 +7,12 @@ import warnings
 import numpy as np
 
 from .data_types import ModelFunction, NLMEOptions, NLMEStats, SAEMOptions
+from .errors import WeakIdentificationWarning
 from .first_order import fit_first_order
 from .lindstrom_bates import fit_lindstrom_bates, fit_lindstrom_bates_nlme
 from .matlab_lb import fit_lindstrom_bates_matlab
 from .model import GroupedModel, build_design
+from .saem import _random_effect_rows
 from .saem import fit_saem as _run_saem
 from .utils import validate_inputs
 
@@ -41,6 +43,7 @@ _MATLAB_NAMES = {
     "ComputeStdErrors": "compute_std_errors",
     "LogLikMethod": "loglik_method",
     "NChains": "n_chains",
+    "VarianceLimiter": "variance_limiter",
 }
 
 # statset fields understood in the Options argument.
@@ -53,6 +56,7 @@ _SAEM_FIELDS = (
     "n_burn_in",
     "loglik_method",
     "n_chains",
+    "variance_limiter",
 )
 
 
@@ -550,6 +554,94 @@ def _build_stats(
     )
 
 
+def _saem_chains(n_chains: int | None, m: int, compat: str) -> int:
+    """Number of MCMC chains per subject.
+
+    MATLAB (undocumented NChains option): max(1, round(100/m)) by default.
+    saemix: ceiling(50/m) by default, and never fewer with m < 50 subjects (a
+    smaller nb.chains is raised, with a message). With one chain and few
+    subjects, SAEM can drift along a direction the data barely determine.
+    """
+    if compat != "r":
+        return int(n_chains) if n_chains else max(1, round(100 / m))
+    least = -(-50 // m)  # ceiling(50 / m); 1 from 50 subjects on
+    if n_chains is None:
+        return least
+    if n_chains < least:
+        warnings.warn(
+            f"the number of subjects is small ({m}): increasing the number of "
+            f"chains from {n_chains} to {least}, as saemix does",
+            UserWarning,
+            stacklevel=3,
+        )
+        return least
+    return int(n_chains)
+
+
+# A parameter on the log, probit or logit scale counts as barely determined by
+# the data if its random effect has a standard deviation above _SD_LIMIT or its
+# fixed effect a standard error above _SE_LIMIT, both on that scale. On the
+# log scale an SD of 6 means that the middle 95% of subjects span 10 orders of
+# magnitude. Chosen on SAEM fits of a weakly identified model with 21 subjects
+# (2400 runs): above the largest value of any fit that reached the maximum
+# likelihood, and exceeded by most fits that diverged.
+_SD_LIMIT = 6.0
+_SE_LIMIT = 6.0
+_SCALES = {1: "log", 2: "probit", 3: "logit"}
+
+
+def _warn_weak_identification(model: GroupedModel, psi, sebeta=None) -> None:
+    """Warn (WeakIdentificationWarning) for each parameter on a transformed
+    scale whose estimates show that the data barely determine it. Only
+    checks the result; the estimates are not changed."""
+    transform = model.transform
+    if transform is None:
+        return
+    R = _random_effect_rows(model)
+    psi = np.atleast_2d(psi)
+    A = model.A
+    for j, code in enumerate(transform):
+        if code not in _SCALES:
+            continue
+        found = []
+        if j in R:
+            sd = float(np.sqrt(max(psi[list(R).index(j), list(R).index(j)], 0.0)))
+            if not sd <= _SD_LIMIT:
+                text = f"the SD of its random effect is {sd:.3g}"
+                if code == 1:
+                    text += (
+                        f" on the log scale (the middle 95% of subjects span "
+                        f"{2 * 1.96 * sd / np.log(10):.0f} orders of magnitude)"
+                    )
+                else:
+                    text += f" on the {_SCALES[code]} scale"
+                found.append(text)
+        if sebeta is not None:
+            # The fixed effect that is the parameter's typical value.
+            others = np.delete(A, j, axis=1)
+            for k in np.flatnonzero(
+                np.all(A[:, j, :] == 1, axis=0) & np.all(others == 0, axis=(0, 1))
+            ):
+                se = float(sebeta[k])
+                if not se <= _SE_LIMIT:
+                    found.append(
+                        f"the standard error of its fixed effect is {se:.3g} on "
+                        f"the {_SCALES[code]} scale"
+                    )
+        if found:
+            warnings.warn(
+                WeakIdentificationWarning(
+                    "the data barely determine parameter {name}: "
+                    + " and ".join(found).replace("{", "{{").replace("}", "}}")
+                    + ". The estimates may be unreliable and change with the "
+                    "random seed; consider more chains (n_chains), removing this "
+                    "parameter's random effect, or reparametrising the model.",
+                    j,
+                ),
+                stacklevel=3,
+            )
+
+
 def nlmefitsa(
     X: np.ndarray,
     y: np.ndarray,
@@ -568,10 +660,20 @@ def nlmefitsa(
 
     SAEM-specific name-value arguments (MATLAB defaults): NIterations
     ([150, 150, 100]), NMCMCIterations ([2, 2, 2]), NBurnIn (5), LogLikMethod
-    ("none"; also "is" or "lin"), ComputeStdErrors (False). ``n_chains`` (a
-    pynlme extension; default ceil(50 / m)) sets the number of MCMC chains per
-    subject: more chains give less run-to-run variation on small datasets;
-    ``n_chains=1`` behaves like MATLAB. Also supported:
+    ("none"; also "is" or "lin"), ComputeStdErrors (False). NChains
+    (``n_chains``) sets the number of MCMC chains per subject; more chains give
+    less run-to-run variation on small datasets. The default is MATLAB's
+    max(1, round(100 / m)) for m subjects. With ``compat="r"`` it is saemix's
+    ceil(50 / m) for fewer than 50 subjects (else 1), and a smaller value is
+    raised to that with a warning, as saemix does. ``compat="r"`` also follows
+    saemix's SAEM in the details where it differs from MATLAB's (see
+    :mod:`pynlme.saem`). VarianceLimiter (``variance_limiter``, a pynlme
+    option): in the second phase each eigenvalue of Omega may shrink by at most
+    3% per iteration, which keeps Omega from collapsing to a singular matrix
+    with few subjects; on by default, off with ``compat="r"`` (saemix has no
+    such limit). ``True``/``False`` overrides this in either mode; with
+    ``compat="r"``, ``stats.pynlme_extensions`` lists such pynlme-only options
+    that were on (``[]``: saemix's algorithm). Also supported:
     ParamTransform, CovPattern (diagonal or full), FEParamsSelect,
     FEConstDesign, FEGroupDesign and REParamsSelect. ``stats.logl``, ``aic`` and
     ``bic`` are None unless LogLikMethod is given; ``b`` holds the conditional
@@ -579,8 +681,6 @@ def nlmefitsa(
     """
     parsed, matlab_style = _parse_options(kwargs)
     compat = _compat(parsed)
-    if compat == "r":
-        parsed.setdefault("n_chains", 1)  # saemix's default
     saem_kwargs = {k: parsed.pop(k) for k in _SAEM_FIELDS if k in parsed}
     compute_se = bool(parsed.pop("compute_std_errors", False))
     options = _make_options(parsed)
@@ -602,6 +702,9 @@ def nlmefitsa(
     y, modelfun, logl_offset = _apply_error_transform(error_model, y, modelfun, V)
     model = _build_model(X, y, group, V, modelfun, beta0, options, matlab_style)
     full_cov = _full_covariance(options.cov_pattern, model.n_random)
+    limiter = saem_options.variance_limiter
+    if limiter is None:
+        limiter = compat != "r"
     n_iter = np.broadcast_to(np.asarray(saem_options.n_iterations, dtype=int), 3)
     n_mcmc = np.broadcast_to(np.asarray(saem_options.n_mcmc_iterations, dtype=int), 3)
     result = _run_saem(
@@ -614,12 +717,12 @@ def nlmefitsa(
         random_state=options.random_state,
         loglik_method=saem_options.loglik_method.lower(),
         compute_std_errors=compute_se,
-        # MATLAB's default (undocumented NChains option): max(1, round(100/m))
-        # chains, which stabilises SAEM on small datasets.
-        n_chains=saem_options.n_chains or max(1, round(100 / model.n_groups)),
+        n_chains=_saem_chains(saem_options.n_chains, model.n_groups, compat),
         error_model=error_model,
         error_params=options.error_parameters,
         verbose=options.verbose,
+        saemix=compat == "r",
+        variance_limiter=limiter,
     )
 
     logl = None if result.logl is None else result.logl + logl_offset
@@ -639,6 +742,9 @@ def nlmefitsa(
     )
     stats.sebeta = None if result.covb is None else np.sqrt(np.diag(result.covb))
     stats.covb = result.covb
+    if compat == "r":
+        stats.pynlme_extensions = ["variance_limiter"] if limiter else []
+    _warn_weak_identification(model, result.psi, stats.sebeta)
     return result.beta, result.psi, stats, result.b
 
 

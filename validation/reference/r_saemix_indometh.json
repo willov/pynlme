@@ -4,7 +4,7 @@
   "engine_version": "3.5",
   "r_version": "R version 4.6.1 (2026-06-24)",
   "n_seeds": 10,
-  "settings": "saemix defaults: nbiter.saemix = c(300, 100), nb.chains = 1",
+  "settings": "saemix defaults: nbiter.saemix = c(300, 100), nb.chains = ceiling(50/N)",
   "beta_mean": [1.11149774065467, -0.617479004041607, 3.84094162074547, 1.38419184255951],
   "beta_sd": [0.435063733972209, 0.305028998188081, 2.48870639713962, 0.516360312079268],
   "psi_diag_mean": [0.0412773749919831, 0.0107451063630957, 1.22819598037494, 0.00433846633235788],

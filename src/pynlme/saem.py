@@ -22,6 +22,15 @@ a + b|f| (combined). Each iteration
 
 During the first phase (simulated annealing) variances may shrink by at most a
 factor TAU per iteration, which keeps the sampler exploring.
+
+``saemix=True`` (``compat="r"``) follows R's saemix where it differs from the
+default: the burn-in iterations count towards the first phase, the samples start
+at mu + 0.5 N(0, Omega), the random-walk scales are adapted once per iteration
+from the acceptance over all of its proposals, the third kernel moves blocks of
+coordinates whose size cycles with the iteration, the error parameter starts at
+1 and its standard deviation shrinks by at most TAU per iteration while
+annealing, and (unless ``variance_limiter=True``) the eigenvalues of Omega are
+not limited in the second phase.
 """
 
 from dataclasses import dataclass
@@ -279,6 +288,105 @@ class _SAEM:
         scales[0][...] = single
         scales[1][...] = full
 
+    def mcmc_saemix(self, Phi, F, omega, n_kernel, domega2, kiter):
+        """E-step as saemix's estep; updates Phi, F and the random-walk scales
+        ``domega2`` (d x d; column 0 for single coordinates, column b - 1 for
+        blocks of b coordinates) in place.
+
+        Kernel 2 moves each coordinate in turn; kernel 3 moves blocks of
+        nrs2 = kiter mod (d - 1) + 2 coordinates (all d when nrs2 = d, else d
+        blocks of cyclically consecutive offsets drawn at random). The scales
+        stay fixed during the E-step; afterwards each kernel's column is
+        multiplied by 1 + 0.4 (acceptance - 0.4), with the acceptance of each
+        coordinate over all moves that included it.
+        """
+        M, d = self.M, self.d
+        mu = self.mu()[self.sub]
+        omega_inv = np.linalg.inv(omega)
+        chol = np.linalg.cholesky(omega)
+
+        def adapt(moves, counts, column):
+            accepted, total = np.zeros(d), np.zeros(d)
+            for (coords, _), n in zip(moves, counts, strict=True):
+                accepted[coords] += n
+                total[coords] += M
+            domega2[:, column] *= 1 + 0.4 * (accepted / total - TARGET_ACCEPT)
+
+        moves = [([j], [domega2[j, 0]]) for _ in range(n_kernel[1]) for j in range(d)]
+        counts = self._moves(Phi, F, mu, omega_inv, chol, n_kernel[0], moves)
+        if moves:
+            adapt(moves, counts, 0)
+        if n_kernel[2] > 0:
+            size = kiter % (d - 1) + 2 if d > 1 else 1
+            moves = []
+            for _ in range(n_kernel[2]):
+                if size < d:
+                    offsets = np.concatenate(
+                        [[0], self.rng.choice(np.arange(1, d), size - 1, replace=False)]
+                    )
+                    blocks = [list((j + offsets) % d) for j in range(d)]
+                else:
+                    blocks = [list(range(d))]
+                moves += [(b, list(domega2[b, size - 1])) for b in blocks]
+            counts = self._moves(Phi, F, mu, omega_inv, chol, 0, moves)
+            adapt(moves, counts, size - 1)
+
+    def _moves(self, Phi, F, mu, omega_inv, chol, n_prior, moves):
+        """``n_prior`` rounds of proposals from the prior, then the random-walk
+        ``moves`` (coordinates, scales) in order; updates Phi and F in place and
+        returns the number of rows that accepted each move. The random numbers
+        are drawn here, so the Rust kernel and NumPy give the same chain."""
+        M, d = self.M, self.d
+        normals, uniforms = [], []
+        for _ in range(n_prior):
+            normals.append(self.rng.standard_normal((M, d)).ravel())
+            uniforms.append(self.rng.random(M))
+        for coords, _ in moves:
+            normals.append(self.rng.standard_normal((M, len(coords))).ravel())
+            uniforms.append(self.rng.random(M))
+        moves = [([int(j) for j in c], [float(v) for v in sc]) for c, sc in moves]
+        if lindstrom_bates._kernels is not None:
+            kind = {"proportional": 1, "combined": 2}.get(self.err.kind, 0)
+            phi, f, counts = lindstrom_bates._kernels.saem_mcmc_moves(
+                self.predict,
+                np.ascontiguousarray(Phi, dtype=float),
+                np.ascontiguousarray(F, dtype=float),
+                np.ascontiguousarray(mu, dtype=float),
+                np.ascontiguousarray(omega_inv, dtype=float),
+                np.ascontiguousarray(chol, dtype=float),
+                np.ascontiguousarray(self.y, dtype=float),
+                self.lengths,
+                (kind, float(self.err.a), float(self.err.b)),
+                int(n_prior),
+                moves,
+                np.concatenate(normals) if normals else np.zeros(0),
+                np.concatenate(uniforms) if uniforms else np.zeros(0),
+            )
+            Phi[...] = phi
+            F[...] = f
+            return list(counts)
+        U = self.nll(F)
+        lp = self.log_prior(Phi, mu, omega_inv)
+
+        def propose(prop, u, with_prior):
+            F_new, valid = self.predict(prop)
+            U_new = self.nll(F_new, valid)
+            lp_new = self.log_prior(prop, mu, omega_inv)
+            log_ratio = U - U_new + ((lp_new - lp) if with_prior else 0.0)
+            ok = np.log(u) < log_ratio
+            Phi[ok], U[ok], lp[ok] = prop[ok], U_new[ok], lp_new[ok]
+            F[ok[self.row_of_obs]] = F_new[ok[self.row_of_obs]]
+            return int(ok.sum())
+
+        for k in range(n_prior):
+            propose(mu + normals[k].reshape(M, d) @ chol.T, uniforms[k], False)
+        counts = []
+        for k, (coords, sc) in enumerate(moves, start=n_prior):
+            prop = Phi.copy()
+            prop[:, coords] += normals[k].reshape(M, len(coords)) * np.asarray(sc)
+            counts.append(propose(prop, uniforms[k], True))
+        return counts
+
     # -- M-step ---------------------------------------------------------------
     def update_beta_R(self, s1, omega):
         if not self.cols_R.size:
@@ -384,8 +492,12 @@ def fit_saem(
     error_model: str = "constant",
     error_params=None,
     verbose: int = 0,
+    saemix: bool = False,
+    variance_limiter: bool | None = None,
 ) -> SAEMResult:
     rng = np.random.default_rng(random_state)
+    if variance_limiter is None:
+        variance_limiter = not saemix
     params = (
         np.ones(2)
         if error_params is None
@@ -401,16 +513,9 @@ def fit_saem(
     K1, K2, K3 = (int(k) for k in n_iterations)
     alpha0 = 10 ** (-3 / max(K1, 1))  # pseudo-variance decay, as MATLAB/saemix
     s.set_extended(K1 > 0)
-    Phi = s.mu()[s.sub]
-    F, _ = s.predict(Phi)
-    if error_model in ("constant", "exponential", "proportional"):
-        # Start the error parameter at the residual scale, not at 1.
-        value = np.sqrt(s.statistic(F) / (C * s.n))
-        err.a, err.b = (0.0, value) if error_model == "proportional" else (value, 0.0)
     omega = np.eye(r)  # saemix's default starting covariance
     omega_F = np.ones(len(s.Fx))  # pseudo-variances of the fixed-only parameters
     d = s.d
-    scales = [0.5 * np.ones(d), 0.5 * np.ones(d)]
 
     def latent_omega():
         if not s.extended:
@@ -419,6 +524,24 @@ def fit_saem(
         out[:r, :r] = omega
         out[r:, r:] = np.diag(omega_F)
         return out
+
+    if saemix:
+        Phi, F = _saemix_start(s, latent_omega())
+        # saemix's rw.ini: 0.5 times the starting standard deviations, one
+        # column per block size.
+        scales = np.tile(0.5 * np.sqrt(np.diag(latent_omega()))[:, None], (1, d))
+        n_mstep_skip, n_burn_in = n_burn_in, 0  # burn-in inside the iterations
+    else:
+        Phi = s.mu()[s.sub]
+        F, _ = s.predict(Phi)
+        if error_model in ("constant", "exponential", "proportional"):
+            # Start the error parameter at the residual scale, not at 1.
+            value = np.sqrt(s.statistic(F) / (C * s.n))
+            err.a, err.b = (
+                (0.0, value) if error_model == "proportional" else (value, 0.0)
+            )
+        scales = [0.5 * np.ones(d), 0.5 * np.ones(d)]
+        n_mstep_skip = 0
 
     for _ in range(n_burn_in):
         s.mcmc(Phi, F, latent_omega(), n_mcmc, scales)
@@ -441,8 +564,16 @@ def fit_saem(
             Phi = Phi[:, :r].copy()
             F, _ = s.predict(Phi)
             s1, S2 = s1[:, :r].copy(), S2[:r, :r].copy()
-            scales = [scales[0][:r], scales[1][:r]]
-        s.mcmc(Phi, F, latent_omega(), n_mcmc, scales)
+            if saemix:
+                scales = scales[:r, :r].copy()
+            else:
+                scales = [scales[0][:r], scales[1][:r]]
+        if saemix:
+            s.mcmc_saemix(Phi, F, latent_omega(), n_mcmc, scales, k)
+            if k <= n_mstep_skip:
+                continue  # saemix's burn-in: step size 0, no M-step
+        else:
+            s.mcmc(Phi, F, latent_omega(), n_mcmc, scales)
 
         gamma = 1.0 if k <= K1 + K2 else 1.0 / (k - K1 - K2)
         t1, t2, t3, P = chain_stats()
@@ -473,10 +604,10 @@ def fit_saem(
             # also pulls correlations towards zero while exploring.
             dg = np.maximum(np.diag(omega_new), TAU * np.diag(omega))
             omega_new = omega_new - np.diag(np.diag(omega_new)) + np.diag(dg)
-        elif k <= K1 + K2:
+        elif k <= K1 + K2 and variance_limiter:
             omega_new = _limit_eigenvalue_decrease(omega_new, omega)
         omega = omega_new
-        _update_error(err, S3 / s.n, s.y, F, k <= K1, gamma)
+        _update_error(err, S3 / s.n, s.y, F, k <= K1, gamma, saemix)
         if verbose > 1:
             print(
                 f"SAEM iteration {k}: beta={s.beta} diag(psi)={np.diag(omega)} "
@@ -510,11 +641,15 @@ def fit_saem(
     )
 
 
-def _update_error(err: ErrorModel, sig2, y, f, annealing: bool, gamma):
+def _update_error(
+    err: ErrorModel, sig2, y, f, annealing: bool, gamma, saemix: bool = False
+):
     """M-step for the error parameters.
 
     constant/exponential: a^2 = mean squared residual; proportional:
-    b^2 = mean squared relative residual (both annealed in the first phase);
+    b^2 = mean squared relative residual (both annealed in the first phase:
+    the variance shrinks by at most TAU per iteration, or with ``saemix`` the
+    standard deviation, as saemix);
     combined: (a, b) refitted to the current samples by Nelder-Mead and then
     annealed (first phase) or moved with the step size, as MATLAB does.
     """
@@ -529,11 +664,32 @@ def _update_error(err: ErrorModel, sig2, y, f, annealing: bool, gamma):
     current = err.b if err.kind == "proportional" else err.a
     value = np.sqrt(max(sig2, 1e-300))
     if annealing:
-        value = max(value, np.sqrt(TAU) * current)
+        value = max(value, (TAU if saemix else np.sqrt(TAU)) * current)
     if err.kind == "proportional":
         err.b = value
     else:
         err.a = value
+
+
+def _saemix_start(s: _SAEM, omega, max_tries: int = 100):
+    """saemix's starting samples, mu + 0.5 N(0, Omega); rows whose predictions
+    are not finite are drawn again (at most ``max_tries`` times)."""
+    mu = s.mu()[s.sub]
+    chol = np.linalg.cholesky(omega)
+    Phi = mu.copy()
+    redraw = np.ones(s.M, bool)
+    for _ in range(max_tries):
+        Phi[redraw] = (
+            mu[redraw] + 0.5 * s.rng.standard_normal((redraw.sum(), s.d)) @ chol.T
+        )
+        F, valid = s.predict(Phi)
+        redraw = ~(valid & np.isfinite(np.add.reduceat(F, s.starts)))
+        if not redraw.any():
+            return Phi, F
+    raise RuntimeError(
+        "nlmefitsa: no starting values with finite predictions found (as saemix's "
+        "FailedInitialParameterGuess); check beta0"
+    )
 
 
 def _limit_eigenvalue_decrease(omega_new, omega_old):
@@ -574,8 +730,14 @@ def _loglik_linearized(s, Phi, omega) -> float:
 
 
 def _covb_linearized(s, Phi, omega) -> np.ndarray:
+    """Inverse of the linearised Fisher information of the fixed effects; all
+    infinite if it is singular (the data do not determine some combination of
+    them, as after SAEM drifted to where the model no longer depends on one)."""
     fim = sum(X.T @ np.linalg.solve(V, X) for X, _, V in _linearized(s, Phi, omega))
-    return np.linalg.inv(fim)
+    try:
+        return np.linalg.inv(fim)
+    except np.linalg.LinAlgError:
+        return np.full(fim.shape, np.inf)
 
 
 def _loglik_importance(s, cm1, cond_cov, omega, n_samples, rng, df=10) -> float:

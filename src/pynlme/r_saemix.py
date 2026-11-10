@@ -173,7 +173,7 @@ def _iterations(control) -> dict:
     sa = int(control.get("nbiter.sa", k1 // 2))
     out = {
         "n_iterations": (sa, int(k1) - sa, int(k2)),
-        "n_chains": int(control.get("nb.chains", 1)),
+        "n_chains": None if "nb.chains" not in control else int(control["nb.chains"]),
         "loglik_method": "is" if control.get("ll.is", True) else "lin",
         "compute_std_errors": bool(control.get("fim", True)),
     }
@@ -193,7 +193,8 @@ def saemix(model: dict, data: dict, control: Mapping | None = None) -> dict:
     """Fit by SAEM, as R's ``saemix(model, data, control)``.
 
     ``control`` takes saemix's names: ``seed``, ``nbiter.saemix``,
-    ``nbiter.sa``, ``nb.chains`` (default 1, as saemix), ``nbiter.mcmc``,
+    ``nbiter.sa``, ``nb.chains`` (default, and at least, ceiling(50/N) with N < 50
+    subjects, as saemix), ``nbiter.mcmc``,
     ``nbiter.burn``, ``ll.is``. Display and saving options are accepted and
     ignored.
     """

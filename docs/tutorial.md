@@ -128,6 +128,7 @@ features".
 ## 7. R conventions
 
 `compat="r"` follows R's nlme: its iteration and default tolerances for `"LME"` and
-`"RELME"`, and its standard errors and BIC; `nlmefitsa` defaults to one chain like
-saemix. On well-behaved problems the estimates are those of the default mode to the
-convergence tolerance.
+`"RELME"`, and its standard errors and BIC. For `nlmefitsa` it follows saemix: at
+least ceiling(50/m) chains for m < 50 subjects, and saemix's SAEM where it differs from
+MATLAB's (see the API reference). On well-behaved problems the estimates are those of
+the default mode to the convergence tolerance (for SAEM, to Monte Carlo error).

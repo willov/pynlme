@@ -34,6 +34,11 @@ class NLMEStats:
     pwres: np.ndarray | None = None  # Population weighted residuals
     cwres: np.ndarray | None = None  # Conditional weighted residuals
 
+    # nlmefitsa with compat="r": the pynlme-only options switched on, so the fit
+    # is not a saemix replication if any are listed ([] for saemix's algorithm).
+    # None for other fits.
+    pynlme_extensions: list[str] | None = None
+
 
 @dataclass
 class NLMEOptions:
@@ -111,6 +116,9 @@ class SAEMOptions:
     n_burn_in: int = 5  # NBurnIn
     loglik_method: str = "none"  # LogLikMethod: "none", "is", "lin"
     n_chains: int | None = None  # NChains; None: max(1, round(100 / m)) as MATLAB
+    # pynlme's phase-2 limit on how fast Omega's eigenvalues shrink; None: on by
+    # default, off with compat="r" (saemix has none)
+    variance_limiter: bool | None = None  # VarianceLimiter
 
 
 # Type aliases for better readability

@@ -97,7 +97,11 @@ MATLAB scripts.
   LME -182.6 for nearly the same fit). `compat="matlab"` reproduces this;
   `compat="r"` reports the full likelihood for every method.
 - **MATLAB nlmefitsa runs max(1, round(100/m)) MCMC chains** by default (an
-  undocumented `NChains` option); pynlme does the same (saemix uses 1).
+  undocumented `NChains` option); pynlme does the same. **saemix runs
+  ceiling(50/N) chains for N < 50 subjects** and raises a smaller `nb.chains` to
+  that (with a message); `compat="r"` does the same. Until 0.5.2 pynlme assumed
+  saemix's default was 1 chain, and the `settings` string of the saemix
+  references said so, but they were run with saemix's ceiling(50/N).
 - **R's BIC conventions differ by package**: nlme uses log(number of
   observations), saemix log(number of subjects) like MATLAB. `compat="r"`
   follows nlme for `nlmefit` and saemix for `nlmefitsa`.
@@ -120,10 +124,22 @@ MATLAB scripts.
 - **SAEM on small datasets**: with one MCMC chain the covariance estimate can
   collapse to a singular matrix (correlation 1) during the full-step phase; this
   is inherent to stochastic EM with few subjects (it happens even with exact
-  posterior draws). pynlme limits how fast eigenvalues may shrink in that phase
-  and, by default, runs ceil(50/m) chains per subject (saemix's
-  recommendation). With that, run-to-run variation is at or below saemix's and
-  below MATLAB's.
+  posterior draws). By default pynlme limits how fast eigenvalues may shrink in
+  that phase (`variance_limiter`) and runs max(1, round(100/m)) chains; with
+  that, run-to-run variation is at or below saemix's and below MATLAB's.
+  `compat="r"` has no limiter, as saemix, and like saemix often ends at
+  correlation 1 with few subjects.
+- **One chain can also drift off** when a parameter is weakly determined. On a
+  stand-in for a celiac-disease model (21 patients, two observations each; one
+  sensitivity's effect saturates), the variance of that parameter's random effect
+  grew during annealing until the sampled values reached where the predictions no
+  longer depend on it, and the fixed effect then wandered (SD 30 on the log scale
+  in the reported fit). Over 200 seeds with one chain, 42% of `compat="r"` fits
+  diverged before 0.5.2 and 18% after it followed saemix's SAEM (saemix forced to
+  one chain: 9% of 100); with 3 chains (saemix's ceiling(50/21)) none did, in
+  pynlme or saemix. `tests/validation/test_saem_small_data.py` has a synthetic
+  version. `WeakIdentificationWarning` flags such fits when the SD or a standard
+  error exceeds 6 on the log scale.
 - **MATLAB's indomethacin `nlmefitsa` example is not reproducible**: across seeds
   MATLAB itself gives estimates with standard deviation ~0.85, and saemix ~0.5-2.5.
   It is not used as a SAEM reference.

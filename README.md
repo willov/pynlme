@@ -112,8 +112,9 @@ print(summary(fit))            # saemix's layout: estimates, SE, CV(%), omega2, 
 psi(fit)[1]; predict(fit, type="ppred")
 ```
 
-saemix's defaults are kept (one chain, `nbiter.saemix = c(300, 100)`, importance
-sampling, standard errors); results agree with R saemix within Monte Carlo error.
+saemix's defaults are kept (`nbiter.saemix = c(300, 100)`, at least ceiling(50/N)
+chains for N < 50 subjects, importance sampling, standard errors); results agree with
+R saemix within Monte Carlo error.
 
 Lower-level equivalents of R's arguments:
 
@@ -123,7 +124,7 @@ Lower-level equivalents of R's arguments:
 | `fixed = list(a ~ 1, b ~ wt)` | `fit(..., covariates={"b": ["wt"]})` or `FEGroupDesign` |
 | `random = pdDiag(a ~ 1)` / `pdSymm(...)` | `REParamsSelect`, `CovPattern` diagonal / full |
 | `saemix`: `transform.par`, `covariance.model` | `ParamTransform` (same codes), `CovPattern` |
-| `saemix(...)` | `nlmefitsa(..., compat="r")` (one chain, as saemix) |
+| `saemix(...)` | `nlmefitsa(..., compat="r")` (saemix's chains and SAEM details) |
 
 `compat="r"` reproduces nlme's iteration step by step, so pynlme returns R's fit even
 where the model has several local solutions, and R's `method="REML"` (which for

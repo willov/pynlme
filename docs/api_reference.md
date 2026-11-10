@@ -115,10 +115,18 @@ Supports `ParamTransform`, `CovPattern`, `ErrorModel`, `ErrorParameters`,
 | `NIterations` | `n_iterations` | `[150, 150, 100]` (annealing, full step, decreasing step) |
 | `NMCMCIterations` | `n_mcmc_iterations` | `[2, 2, 2]` (prior draws, single-coordinate, full-vector random walk) |
 | `NBurnIn` | `n_burn_in` | 5 |
-| `NChains` | `n_chains` | `max(1, round(100 / m))` (MATLAB's); 1 with `compat="r"` (saemix's) |
+| `NChains` | `n_chains` | `max(1, round(100 / m))` (MATLAB's); with `compat="r"` saemix's `ceiling(50 / m)` for m < 50 subjects (else 1), and a smaller value is raised to it with a warning |
+| `VarianceLimiter` | `variance_limiter` | on by default, off with `compat="r"` (saemix has no such limit): in the second phase each eigenvalue of `Omega` may shrink by at most 3% per iteration, which keeps `Omega` from collapsing to a singular matrix with few subjects. `True`/`False` overrides this in either mode |
 | `LogLikMethod` | `loglik_method` | `"none"`; `"is"` (importance sampling) or `"lin"` (linearisation) |
 | `ComputeStdErrors` | `compute_std_errors` | `False` |
 | | `random_state` | seed for reproducible results |
+
+With `compat="r"`, `stats.pynlme_extensions` lists the pynlme-only options that were
+switched on (`["variance_limiter"]`), so such a fit is not quoted as a saemix
+replication; it is `[]` for saemix's algorithm and `None` in the default mode. After the
+fit, `nlmefitsa` warns (`WeakIdentificationWarning`) when the data barely determine a
+parameter on the log, probit or logit scale: a random-effect SD or a standard error above
+6 on that scale. The estimates are not changed.
 
 With `LogLikMethod="none"`, `stats.logl`, `aic` and `bic` are `None`, as in MATLAB. `b`
 holds the conditional means of the random effects.
@@ -221,7 +229,8 @@ fit, R's NA) or `level=0` population predictions.
   `error_model`: constant, proportional, combined, exponential. `omega_init` and
   `fixed_estim` are not supported (they raise).
 - `saemix(model, data, control)`. `control` uses saemix's names: `seed`,
-  `nbiter.saemix`, `nbiter.sa`, `nb.chains` (default 1), `nbiter.mcmc`, `nbiter.burn`,
+  `nbiter.saemix`, `nbiter.sa`, `nb.chains` (default and minimum `ceiling(50/N)` for
+  N < 50 subjects, as saemix), `nbiter.mcmc`, `nbiter.burn`,
   `ll.is`, `fim`; display/save options are accepted and ignored, others raise.
 
 The result is `fit`'s dict plus `population` (natural scale) and `se_population`

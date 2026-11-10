@@ -22,6 +22,7 @@ ODE models via sund_model (SUND) or ode_model (SciPy).
 
 from .api import fit, predict
 from .data_types import NLMEOptions, NLMEStats
+from .errors import WeakIdentificationWarning
 from .model import with_jacobian
 from .nlmefit import fit_mle, fit_nlme, fit_saem, nlmefit, nlmefitsa
 from .ode import ode_model
@@ -58,6 +59,7 @@ __all__ = [
     # Data types
     "NLMEStats",
     "NLMEOptions",
+    "WeakIdentificationWarning",
     # Utilities
     "detect_data_format",
     "generate_design_matrix",

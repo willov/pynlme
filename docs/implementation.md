@@ -96,10 +96,22 @@ As MATLAB's `nlmefitsa` and saemix (Kuhn & Lavielle):
   shrinking by 10^-3 over the phase (afterwards they are fixed and updated by a
   Gauss-Newton step plus stochastic approximation).
 - Three Metropolis-Hastings kernels with adaptive scales; several chains per subject
-  (default `max(1, round(100/m))`), handled as extra rows.
+  (default `max(1, round(100/m))`; with `compat="r"` saemix's `ceiling(50/m)` for
+  m < 50), handled as extra rows.
 - Step size 1 in phases 1-2, `1/k` in phase 3; simulated annealing on variances in
   phase 1; in phase 2 eigenvalues of `Omega` may shrink by at most 3% per iteration
   (a singular `Omega` is absorbing; this happened in most runs with 20 subjects).
+  `compat="r"` has no such limit, as saemix, unless `variance_limiter=True` (then
+  `stats.pynlme_extensions` says so).
+- `compat="r"` follows saemix where it differs from MATLAB: the burn-in iterations
+  count towards the annealing phase, the samples start at `mu + 0.5 N(0, Omega)`,
+  the random-walk scales are adapted once per iteration from the acceptance over all
+  its proposals, the third kernel moves blocks of coordinates whose size cycles with
+  the iteration, and the error parameter starts at 1 (`error.init`) with its standard
+  deviation shrinking by at most 3% per iteration while annealing.
+- After the fit, `nlmefitsa` warns (`WeakIdentificationWarning`) when a parameter on
+  the log, probit or logit scale has a random-effect SD or a standard error above 6 on
+  that scale: the data then barely determine it. The estimates are not changed.
 - Everything runs on flat arrays of all rows' observations, so one model call per
   proposal with `Vectorization="Full"`.
 

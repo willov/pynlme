@@ -76,5 +76,8 @@ default RELME does not.
    (see [the scaling benchmark](../validation/scaling/README.md)).
 3. Supply analytic derivatives with `with_jacobian` when the model is expensive.
 4. `nlmefitsa`: fewer chains (`NChains=1`) or iterations trade precision for speed.
+   With few subjects one chain can also drift to a wrong fit (see "SAEM on small
+   datasets" in the validation notes); `compat="r"` never uses fewer than saemix's
+   ceiling(50/m).
 5. FOCE is the slowest method with ODE models (finite differences re-solve every
    subject's random effects); LME or SAEM are much faster there.
