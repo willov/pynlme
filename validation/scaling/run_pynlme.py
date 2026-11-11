@@ -38,8 +38,14 @@ RTOL, ATOL = 1e-8, 1e-10
 # The fallback, the same rule in every program's runner: a fit that fails or misses
 # the optimum at the common tolerance runs at a tighter one, marked in the report.
 # Here: the fits that use finite differences of SUND's solution (MATLAB mode, FOCE)
-# miss it at the common tolerance (SUND's error there is the largest, 2.6e-8 on mm).
+# miss it at the common tolerance. SUND's solution is not smooth in the parameters:
+# a change of 1e-4 in a parameter moves it by about the tolerance from a smooth
+# curve (8e-10 of the largest concentration on mm at 1e-10; SciPy's DOP853, all
+# subjects as one system, 8e-13 at 1e-8), which the finite differences amplify.
+# FOCE's outer gradient (central differences of the objective, step 1e-5) needs
+# 1e-12 on mm: at 1e-10 it stops early, with split or coupled batches alike.
 TIGHT = 1e-10, 1e-12
+TIGHTER = {("mm", "FOCE"): (1e-12, 1e-14)}
 RESULTS = Path(__file__).resolve().parent / "results"
 MODELS = Path(__file__).resolve().parents[1] / "models"
 
@@ -203,9 +209,28 @@ def saemix_oral(t, y, group, dose):
     return lambda: saemix(smodel, sdata, {"seed": 1})
 
 
+def estimates(beta, psi, stats) -> dict:
+    """The fixed effects (on the transformed scale), the random-effect variances
+    and the error parameters, to check that fits agree (SAEM reports no
+    log-likelihood by default)."""
+    return {
+        "beta": [float(v) for v in np.ravel(beta)],
+        "psi_diag": [float(v) for v in np.diag(np.atleast_2d(psi))],
+        "errorparam": [float(v) for v in np.ravel(stats.errorparam)],
+    }
+
+
+def saemix_run(fit):
+    """pynlme.r.saemix's log-likelihood (importance sampling, its default, as R
+    saemix) and fixed effects on the log scale."""
+    result = fit()
+    beta = [float(np.log(v)) for v in result["population"].values()]
+    return float(result["logLik"]), {"beta": beta}
+
+
 def runs(name: str, n: int):
-    """(method, function returning the log-likelihood, ODE tolerance or None for
-    the common one) for one dataset."""
+    """(method, function returning the log-likelihood and the estimates, ODE
+    tolerance or None for the common one) for one dataset."""
     t, y, group, dose = load(name, n)
     if name == "oral":
         args = (t, y, group, dose, one_compartment_oral_v, [-2.5, 0.5, -3.2])
@@ -247,27 +272,55 @@ def runs(name: str, n: int):
         tight = label == "SUND"
         fd_args = (t, y, group, dose, build(*TIGHT), beta0) if tight else args
         fd_tol = TIGHT if tight else None
+        foce_tol = TIGHTER.get((name, "FOCE"), TIGHT) if tight else None
+        foce_args = (t, y, group, dose, build(*foce_tol), beta0) if tight else args
         suffix = f" ({label})" if label else ""
 
         def fit(f=nlmefit, args=args, **extra):
             def run():
-                _, _, stats, _ = f(*args, **kw, **extra)
-                return stats.logl
+                beta, psi, stats, _ = f(*args, **kw, **extra)
+                return stats.logl, estimates(beta, psi, stats)
 
             return run
 
         out += [
             (f"LME, MATLAB mode{suffix}", fit(args=fd_args), fd_tol),
             (f"LME, R mode{suffix}", fit(compat="r"), None),
-            (f"FOCE{suffix}", fit(args=fd_args, ApproximationType="FOCE"), fd_tol),
+            (
+                f"FOCE{suffix}",
+                fit(args=foce_args, ApproximationType="FOCE"),
+                foce_tol,
+            ),
             (f"SAEM{suffix}", fit(nlmefitsa, random_state=1), None),
         ]
     if name == "oral":
         fit_saemix = saemix_oral(t, y, group, dose)
-        out.append(
-            ("SAEM, pynlme.r.saemix", lambda: None if fit_saemix() else None, None)
-        )
+        out.append(("SAEM, pynlme.r.saemix", lambda: saemix_run(fit_saemix), None))
     return out
+
+
+def environment(load_before) -> dict:
+    """Versions, SUND's thread count and the load averages before and after a
+    model's runs (the machine should be idle)."""
+    from importlib.metadata import version
+
+    import scipy
+
+    info = {
+        "python": sys.version.split()[0],
+        "pynlme": version("pynlme"),
+        "numpy": np.__version__,
+        "scipy": scipy.__version__,
+        "cpus": os.cpu_count(),
+        "load_before": load_before,
+        "load_after": os.getloadavg(),
+    }
+    try:
+        info["sund"] = version("sund")
+        info["sund_threads"] = os.environ.get("SUND_NUM_THREADS", "all cores")
+    except Exception:  # noqa: BLE001 - SUND is optional
+        pass
+    return info
 
 
 def main() -> None:
@@ -279,6 +332,7 @@ def main() -> None:
     results = json.loads(path.read_text()) if path.exists() else {}
     for name in sys.argv[1:] or ("oral", "mm", "mmd", "tmdd"):
         results[name] = {}
+        load_before = os.getloadavg()
         too_slow = set()
         for n in SIZES_TO_RUN:
             for method, run, tol in runs(name, n):
@@ -290,7 +344,7 @@ def main() -> None:
                 try:
                     for _ in range(3):
                         t0 = time.perf_counter()
-                        logl = run()
+                        logl, est = run()
                         times.append(time.perf_counter() - t0)
                         if times[-1] > 5:
                             break
@@ -299,6 +353,8 @@ def main() -> None:
                     print(f"{name} {n} {method}: {error!r}", flush=True)
                     continue
                 entry[str(n)] = {"time_s": min(times), "logl": logl}
+                if est is not None:
+                    entry[str(n)]["estimates"] = est
                 if tol is not None:
                     entry[str(n)]["rtol"], entry[str(n)]["atol"] = tol
                 print(f"{name} {n:>5} {method:<28} {min(times):9.3f} s", flush=True)
@@ -307,7 +363,8 @@ def main() -> None:
                 first = n == SIZES_TO_RUN[0]
                 if min(times) > LIMIT_S and not (method.startswith("SAEM") and first):
                     too_slow.add(method)
-    path.write_text(json.dumps(results, indent=1))
+        results.setdefault("_environment", {})[name] = environment(load_before)
+        path.write_text(json.dumps(results, indent=1))
 
 
 if __name__ == "__main__":

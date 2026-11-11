@@ -141,17 +141,65 @@ def main() -> None:
             )
         print(
             "Log-likelihood each program reports, as a check that the fits are "
-            "equally good (LME and FOCE; within a method the approximations "
-            "agree):\n"
+            "equally good (LME, FOCE and saemix's SAEM; within a method the "
+            "approximations agree):\n"
         )
         print("| Method | Program | 10 subjects | 100 subjects | 1000 subjects |")
         print("|---|---|---|---|---|")
         for method, label, program, key in rows:
             entries = results.get(program, {}).get(model, {}).get(key, {})
             cells = [logl_cell(entries.get(n, entries.get(f"n{n}"))) for n in SIZES]
-            if method != "SAEM" and any(c != "–" for c in cells):
+            # SAEM reports a log-likelihood only in saemix (importance sampling)
+            # and nlmixr2 (its own approximation); nlmefitsa's default has none.
+            shown = method != "SAEM" or "saemix" in label
+            if shown and any(c != "–" for c in cells):
                 print(f"| {method} | {label} | " + " | ".join(cells) + " |")
         print()
+        estimate_table(model, rows, results.get("pynlme", {}).get(model, {}))
+
+
+def reference_key(rows) -> str:
+    """pynlme's R-mode LME (SciPy if run, else SUND), the reference fit for the
+    estimate check."""
+    keys = [key for _, _, program, key in rows if program == "pynlme"]
+    for key in ("LME, R mode (SciPy)", "LME, R mode (SUND)", "LME, R mode"):
+        if key in keys:
+            return key
+    raise KeyError("no R-mode LME row")
+
+
+def estimate_table(model, rows, pynlme) -> None:
+    """Largest difference in pynlme's fixed effects (log scale, so relative) from
+    its R-mode LME fit, for the other methods and solvers."""
+    ref_key = reference_key(rows)
+    ref = pynlme.get(ref_key, {})
+    lines = []
+    for method, label, program, key in rows:
+        if program != "pynlme" or key == ref_key:
+            continue
+        cells = []
+        for n in SIZES:
+            entry, base = pynlme.get(key, {}).get(n), ref.get(n)
+            try:
+                a, b = entry["estimates"]["beta"], base["estimates"]["beta"]
+                cells.append(
+                    f"{max(abs(x - y) for x, y in zip(a, b, strict=True)):.3f}"
+                )
+            except (KeyError, TypeError):
+                cells.append("–")
+        if any(c != "–" for c in cells):
+            lines.append(f"| {method} | {label} | " + " | ".join(cells) + " |")
+    if not lines:
+        return
+    print(
+        "Fixed effects: largest difference (log scale) from pynlme's "
+        f"{ref_key.replace('LME, ', '')} LME fit, as a check that the fits agree "
+        "(also for SAEM, which reports no log-likelihood by default):\n"
+    )
+    print("| Method | Program | 10 subjects | 100 subjects | 1000 subjects |")
+    print("|---|---|---|---|---|")
+    print("\n".join(lines))
+    print()
 
 
 if __name__ == "__main__":
