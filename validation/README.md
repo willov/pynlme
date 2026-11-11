@@ -128,7 +128,9 @@ MATLAB scripts.
   that phase (`variance_limiter`) and runs max(1, round(100/m)) chains; with
   that, run-to-run variation is at or below saemix's and below MATLAB's.
   `compat="r"` has no limiter, as saemix, and like saemix often ends at
-  correlation 1 with few subjects.
+  correlation 1 with few subjects: on the celiac stand-in below, with 3 chains,
+  166 of 200 seeds ended with |correlation| > 0.99 (median exact log-likelihood
+  -16.81; saemix -16.78), and none with `variance_limiter=True` (median -16.58).
 - **One chain can also drift off** when a parameter is weakly determined. On a
   stand-in for a celiac-disease model (21 patients, two observations each; one
   sensitivity's effect saturates), the variance of that parameter's random effect
@@ -137,9 +139,13 @@ MATLAB scripts.
   in the reported fit). Over 200 seeds with one chain, 42% of `compat="r"` fits
   diverged before 0.5.2 and 18% after it followed saemix's SAEM (saemix forced to
   one chain: 9% of 100); with 3 chains (saemix's ceiling(50/21)) none did, in
-  pynlme or saemix. `tests/validation/test_saem_small_data.py` has a synthetic
-  version. `WeakIdentificationWarning` flags such fits when the SD or a standard
-  error exceeds 6 on the log scale.
+  pynlme or saemix. The variance limiter does not prevent this: with it, 20% of
+  one-chain fits diverged. `tests/validation/test_saem_small_data.py` has a
+  synthetic version (one chain, 100 seeds: an SD above 5 in 18 without the
+  limiter and 25 with it; none with 3 chains). `WeakIdentificationWarning` flags
+  fits whose SD or a standard error exceeds 6 on the log scale: none of 1099 good
+  fits and 65 of 101 diverged ones; the others ended at a worse optimum with
+  ordinary-looking estimates.
 - **MATLAB's indomethacin `nlmefitsa` example is not reproducible**: across seeds
   MATLAB itself gives estimates with standard deviation ~0.85, and saemix ~0.5-2.5.
   It is not used as a SAEM reference.
