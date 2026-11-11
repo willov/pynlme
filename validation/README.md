@@ -136,7 +136,9 @@ MATLAB scripts.
   sensitivity's effect saturates), the variance of that parameter's random effect
   grew during annealing until the sampled values reached where the predictions no
   longer depend on it, and the fixed effect then wandered (SD 30 on the log scale
-  in the reported fit). Over 200 seeds with one chain, 42% of `compat="r"` fits
+  in the reported fit, log-likelihood -22.4; with saemix's 3 chains the real model
+  gives -16.74 for that seed and -16.66 and -17.04 for the other two reported
+  seeds). Over 200 seeds with one chain, 42% of `compat="r"` fits
   diverged before 0.5.2 and 18% after it followed saemix's SAEM (saemix forced to
   one chain: 9% of 100); with 3 chains (saemix's ceiling(50/21)) none did, in
   pynlme or saemix. The variance limiter does not prevent this: with it, 20% of
