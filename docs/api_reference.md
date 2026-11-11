@@ -268,13 +268,30 @@ A compiled [SUND](https://isbgroup.eu/sund-toolbox) model as a model function
 (`pip install "pynlme[sund]"`). `model` is the name of an installed SUND model (or a
 `sund.Simulation`); `parameters` are the SUND parameters set from `phi`, in order; the
 columns of `V` set the initial states `v_states`, then the parameters `v_parameters`.
-With `Vectorization="Full"` it simulates `batch_size` (16) parameter sets per SUND call
-using containers. Integrator tolerances default to rel 1e-10, abs 1e-12, because the
-model is differentiated numerically. If the integrator fails (e.g. a stiff system at
-extreme parameters during a step), the predictions are non-finite and the step is
-rejected like any other. `method="adams"` (default `"bdf"`) suits non-stiff models:
-on the Michaelis-Menten PK model it is 3 times faster per batched simulation and more
-accurate. See `examples/sund_ode_model.py`.
+Integrator tolerances default to rel 1e-10, abs 1e-12, because the model is
+differentiated numerically. If the integrator fails (e.g. a stiff system at extreme
+parameters during a step), the predictions are non-finite and the step is rejected like
+any other. `method="adams"` (default `"bdf"`) suits non-stiff models: on the
+Michaelis-Menten PK model it is 3 times faster per coupled batch and more accurate. See
+`examples/sund_ode_model.py`.
+
+With `Vectorization="Full"` it simulates `batch_size` parameter sets per SUND call,
+using containers, in one of two ways:
+
+- `split_components=True` (default): each subject has its own integrator, and subjects
+  run in parallel on `threads` threads (default: the environment variable
+  `SUND_NUM_THREADS` if set, otherwise all CPU cores; use `threads=1` when running
+  several fits in parallel). A subject's solution does not depend on the other subjects'
+  parameters, and an integrator failure affects only that subject. `batch_size` defaults
+  to 64. A batch is read out at the times of all its subjects, so large batches get slow
+  when subjects have different sampling times (and those times change a solution slightly,
+  within the tolerance); with the same times everywhere larger batches are slightly
+  faster.
+- `split_components=False`: the subjects of a batch are integrated as one coupled system
+  on one thread, sharing their steps and a dense linear solver. `batch_size` defaults
+  to 16. Coupled batches are the cheapest per subject on small non-stiff models; on
+  stiff or larger models the linear solver makes them slower. A subject's solution then
+  depends slightly on which subjects share its batch.
 
 Inputs (doses, infusions) come from SUND activities, one set per experiment. You give
 the model and the data; `sund_model` creates the simulations. Give each experiment as a

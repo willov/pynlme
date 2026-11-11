@@ -5,10 +5,21 @@ All notable changes to the pynlme project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.2] - unreleased
 
 ### Changed
 
+- The `sund` extra needs SUND 2.13 or newer. SUND 2.13 integrates the containers of a
+  simulation separately by default, which made `sund_model`'s batches of 16 up to
+  several times slower on one thread (installing `pynlme[sund]` already resolves to
+  it).
+- `sund_model`: by default each subject has its own integrator (`split_components=True`)
+  and subjects run in parallel (`threads`, default `SUND_NUM_THREADS` or all CPU cores),
+  in batches of 64. A subject's solution no longer depends on the parameters of the
+  others in its batch. `split_components=False` gives SUND's coupled batches as before
+  (`batch_size` 16, one thread), the cheapest per subject on small non-stiff models.
+- `sund_model`: an integrator failure gives non-finite predictions only for that
+  subject with `split_components=True`, not for its whole batch.
 - Scaling benchmark: a stiff model (target-mediated drug disposition) and every
   program's ODE solver at the same tolerance (relative 1e-8, absolute 1e-10), checked
   for equal accuracy; a fit that fails or misses the optimum there runs at a tighter
