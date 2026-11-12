@@ -34,6 +34,11 @@ SIZES_TO_RUN = tuple(
     int(n)
     for n in os.environ.get("SCALING_SIZES", ",".join(map(str, SIZES))).split(",")
 )
+# SCALING_METHODS="FOCE (SUND)" runs only these methods (comma-separated, as in
+# pynlme.json); the other methods' results are kept.
+METHODS_TO_RUN = tuple(
+    m.strip() for m in os.environ.get("SCALING_METHODS", "").split(",") if m.strip()
+)
 RTOL, ATOL = 1e-8, 1e-10
 # The fallback, the same rule in every program's runner: a fit that fails or misses
 # the optimum at the common tolerance runs at a tighter one, marked in the report.
@@ -43,9 +48,10 @@ RTOL, ATOL = 1e-8, 1e-10
 # curve (8e-10 of the largest concentration on mm at 1e-10; SciPy's DOP853, all
 # subjects as one system, 8e-13 at 1e-8), which the finite differences amplify.
 # FOCE's outer gradient (central differences of the objective, step 1e-5) needs
-# 1e-12 on mm: at 1e-10 it stops early, with split or coupled batches alike.
+# 1e-12: at 1e-10 it stops early on every ODE model (on mm with split or coupled
+# batches alike).
 TIGHT = 1e-10, 1e-12
-TIGHTER = {("mm", "FOCE"): (1e-12, 1e-14)}
+TIGHT_FOCE = 1e-12, 1e-14
 RESULTS = Path(__file__).resolve().parent / "results"
 MODELS = Path(__file__).resolve().parents[1] / "models"
 
@@ -272,7 +278,7 @@ def runs(name: str, n: int):
         tight = label == "SUND"
         fd_args = (t, y, group, dose, build(*TIGHT), beta0) if tight else args
         fd_tol = TIGHT if tight else None
-        foce_tol = TIGHTER.get((name, "FOCE"), TIGHT) if tight else None
+        foce_tol = TIGHT_FOCE if tight else None
         foce_args = (t, y, group, dose, build(*foce_tol), beta0) if tight else args
         suffix = f" ({label})" if label else ""
 
@@ -324,18 +330,21 @@ def environment(load_before) -> dict:
 
 
 def main() -> None:
-    """Runs the models named on the command line (default both); results of
+    """Runs the models named on the command line (default all); results of
     other models already in pynlme.json are kept."""
     warnings.simplefilter("ignore")
     RESULTS.mkdir(exist_ok=True)
     path = RESULTS / "pynlme.json"
     results = json.loads(path.read_text()) if path.exists() else {}
     for name in sys.argv[1:] or ("oral", "mm", "mmd", "tmdd"):
-        results[name] = {}
+        if not METHODS_TO_RUN:
+            results[name] = {}
         load_before = os.getloadavg()
         too_slow = set()
         for n in SIZES_TO_RUN:
             for method, run, tol in runs(name, n):
+                if METHODS_TO_RUN and method not in METHODS_TO_RUN:
+                    continue
                 entry = results.setdefault(name, {}).setdefault(method, {})
                 if method in too_slow:
                     entry[str(n)] = {"skipped": True}
@@ -363,7 +372,8 @@ def main() -> None:
                 first = n == SIZES_TO_RUN[0]
                 if min(times) > LIMIT_S and not (method.startswith("SAEM") and first):
                     too_slow.add(method)
-        results.setdefault("_environment", {})[name] = environment(load_before)
+        key = ": ".join([name, ", ".join(METHODS_TO_RUN)]) if METHODS_TO_RUN else name
+        results.setdefault("_environment", {})[key] = environment(load_before)
         path.write_text(json.dumps(results, indent=1))
 
 

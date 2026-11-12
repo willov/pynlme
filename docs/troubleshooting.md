@@ -7,6 +7,14 @@ Try better starting values, `Options={"MaxIter": 500}`, or a simpler random-effe
 structure (`REParamsSelect`). The Lindstrom-Bates iteration can cycle between states on
 weakly identified models; FOCE (`ApproximationType="FOCE"`) or `nlmefitsa` may then help.
 
+**`nlmefitsa` estimates differ from `nlmefit`'s**: SAEM has no convergence test; it
+runs `NIterations` (default 150, 150, 100, as MATLAB). Parameters without random
+effects move slowly, and with the defaults they may not have converged: in the
+[scaling benchmark](../validation/scaling/README.md) the Michaelis-Menten model's Km
+and Vmax (Km without a random effect) ended 0.2-0.3 off on the log scale, in MATLAB
+too, and came close to `nlmefit`'s with four times the iterations. Rerun with more
+iterations (e.g. `NIterations=[600, 600, 400]`) and compare.
+
 **`NotImplementedError`**: the option is not implemented yet (e.g. `FEObsDesign`, a
 block-structured `CovPattern`, `LogLikMethod="gq"`). pynlme never ignores an option.
 
@@ -70,13 +78,13 @@ default RELME does not.
 1. Write the model for `Vectorization="Full"` (see the API reference): one model call
    for many groups instead of one per group.
 2. For ODE models use a compiled SUND model via `sund_model` (subjects in parallel),
-   or `ode_model` with a vectorised right-hand side. SUND for stiff models (its BDF
-   method; 3-17 times faster than SciPy at 10 subjects, 1.2-1.4 times at 1000) and
-   for inputs such as doses (activities). For non-stiff models SUND with
-   `method="adams"` and `ode_model` (all subjects as one system) are close, except in
-   the MATLAB mode and FOCE: they take finite differences of the solution, so with
-   SUND keep `rel_tol` at 1e-10 or tighter (or the fit can end at a wrong optimum),
-   where `ode_model` at `rtol=1e-8` is much faster
+   or `ode_model` with a vectorised right-hand side. In the benchmark SUND was the
+   faster for LME in the R mode and for SAEM (5-25 times on a stiff model, 1.3-4
+   times on a non-stiff one, using all cores), and it handles inputs such as doses
+   (activities). The MATLAB mode and FOCE take finite differences of the solution:
+   with SUND keep `rel_tol` at 1e-10 in the MATLAB mode and 1e-12 for FOCE (or the
+   fit can end at a wrong optimum); `ode_model` at `rtol=1e-8` is enough there and
+   was faster in the MATLAB mode on a non-stiff model with many subjects
    (see [the scaling benchmark](../validation/scaling/README.md)).
 3. Supply analytic derivatives with `with_jacobian` when the model is expensive.
 4. `nlmefitsa`: fewer chains (`NChains=1`) or iterations trade precision for speed.

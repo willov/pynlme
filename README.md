@@ -258,18 +258,21 @@ times slower.
   (SUND) or a multi-column `output` (SciPy); each subject is simulated once.
 
 Speed with ODE models (the [scaling benchmark](https://github.com/willov/pynlme/blob/main/validation/scaling/README.md)): LME
-fits in the R mode are the fastest of all programs (2.5 s for 1000 subjects of the
+fits in the R mode are the fastest of all programs (1.6 s for 1000 subjects of the
 non-stiff model, against 47 s in MATLAB with `ode45` and 210 s in R `nlme` with
-deSolve), and SAEM is 2-5 times faster than nlmixr2's from 100 subjects on. Which
-solver: SUND for stiff models (BDF; 3-17 times faster than SciPy at 10 subjects,
-1.2-1.4 times at 1000) and for models with doses or other inputs (activities). For
-non-stiff models SUND's Adams method (`method="adams"`) and SciPy's `ode_model`
-(all subjects as one system) are close (SUND faster in the R mode, SciPy for SAEM),
-except in the MATLAB mode: it and FOCE take finite differences of the solution and
-need an accurate solve, so SUND needs `rel_tol=1e-10` there, and in the benchmark
-SciPy at `rtol=1e-8` was faster in this mode (not yet investigated). FOCE is slow with ODE models (finite differences re-solve every
-subject's random effects); prefer LME or SAEM there. Analytic derivatives
-(`pynlme.with_jacobian`) replace finite differences when available.
+deSolve), and SAEM is 6-15 times faster than nlmixr2's at 100 subjects. Which solver:
+SUND, which by default simulates each subject with its own integrator and subjects in
+parallel on all cores, was the faster in the benchmark for LME in the R mode and for
+SAEM: 5-25 times faster than SciPy's `ode_model` on the stiff model, 1.3-4 times on
+the non-stiff one (with 16 threads against SciPy's one), and it handles doses and
+other inputs (activities). The MATLAB mode and FOCE take finite differences of the
+solution, and SUND's solution is not smooth enough in the parameters for that at
+looser tolerances: use `rel_tol=1e-10` in the MATLAB mode and `1e-12` for FOCE (or
+the fit can end at a wrong optimum). In the MATLAB mode on the non-stiff model with
+1000 subjects SciPy at `rtol=1e-8` was faster (4.4 s against 13 s). FOCE is slow with
+ODE models (finite differences re-solve every subject's random effects); prefer LME
+or SAEM there. Analytic derivatives (`pynlme.with_jacobian`) replace finite
+differences when available.
 
 ## Installation
 

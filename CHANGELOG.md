@@ -23,9 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Scaling benchmark: a stiff model (target-mediated drug disposition) and every
   program's ODE solver at the same tolerance (relative 1e-8, absolute 1e-10), checked
   for equal accuracy; a fit that fails or misses the optimum there runs at a tighter
-  tolerance, marked in the tables. README and troubleshooting: which ODE solver to use
-  (SUND for stiff models and inputs; SUND needs `rel_tol=1e-10` in the MATLAB mode and
-  FOCE).
+  tolerance, marked in the tables (with SUND: the MATLAB mode at 1e-10, FOCE at
+  1e-12). pynlme's results rerun with SUND 2.14's separate integrators in parallel;
+  the runner records each fit's estimates (also for SAEM) and the machine's load.
+  README and troubleshooting: which ODE solver to use (SUND is the faster for LME in
+  the R mode and for SAEM; SUND needs `rel_tol=1e-10` in the MATLAB mode and 1e-12
+  for FOCE), and that `nlmefitsa`'s default iterations may not converge for
+  parameters without random effects.
 
 ## [0.5.1] - 2026-10-12
 
