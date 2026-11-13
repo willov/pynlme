@@ -23,8 +23,7 @@ MATLAB R2023b, R (`nlme`, `saemix`) and nlmixr2.
   below). One rule for all programs: a fit that fails or ends at a wrong optimum at
   the common tolerance is run at a tighter one and marked † with its relative
   tolerance. This applies to pynlme's MATLAB mode with SUND, run at 1e-10, FOCE with
-  SUND, run at 1e-12 (on mmd and tmdd the tables still show the run at 1e-10, which
-  stops slightly early; re-timing at 1e-12 is pending), and R `nlme` on tmdd, whose PNLS step fails near the optimum
+  SUND, run at 1e-12, and R `nlme` on tmdd, whose PNLS step fails near the optimum
   at 1e-6 to 1e-10, run at 1e-12. At 1e-10 for all, `nlme` instead took a wrong path
   on mm, so no single tolerance suits every program. SUND needs the tighter tolerance
   in the fits that take finite differences of the solution because its solution is
@@ -123,7 +122,7 @@ Michaelis-Menten ODE model (4 parameters, 2 random effects, 8 observations per s
 | LME | pynlme, R mode (SUND) | 0.057 | 0.201 | 1.60 |
 | LME | pynlme, R mode (SciPy) | 0.185 | 0.509 | 4.37 |
 | LME | R `nlme` (deSolve) | 1.35 | 13 | 210 |
-| FOCE | pynlme (SUND) | 78 †1e-12 | skipped | skipped |
+| FOCE | pynlme (SUND) | 77 †1e-12 | skipped | skipped |
 | FOCE | pynlme (SciPy) | 108 | skipped | skipped |
 | FOCE | MATLAB `nlmefit` (ode45) | 426 | skipped | skipped |
 | FOCE | nlmixr2 (FOCEi, rxode2) | 0.881 | 1.86 | 14 |
@@ -169,7 +168,7 @@ Michaelis-Menten ODE model with three doses (0, 12 and 24 h; SUND activities, nl
 | LME | MATLAB `nlmefit` (ode45) | failed | 31 | 217 |
 | LME | pynlme, R mode (SUND) | 0.080 | 0.441 | 4.74 |
 | LME | R `nlme` (deSolve) | 5.52 | 55 | 697 |
-| FOCE | pynlme (SUND) | failed | 211 †1e-10 | skipped |
+| FOCE | pynlme (SUND) | failed | 505 †1e-12 | skipped |
 | FOCE | MATLAB `nlmefit` (ode45) | not run | not run | not run |
 | FOCE | nlmixr2 (FOCEi, rxode2) | 1.40 | 5.09 | 36 |
 | SAEM | pynlme `nlmefitsa` (SUND) | 17 | 17 | 155 |
@@ -186,7 +185,7 @@ Log-likelihood each program reports, as a check that the fits are equally good (
 | LME | MATLAB `nlmefit` (ode45) | – | 271.09 | 2571.61 |
 | LME | pynlme, R mode (SUND) | 29.87 | 271.08 | 2571.69 |
 | LME | R `nlme` (deSolve) | 29.87 | 271.08 | 2571.60 |
-| FOCE | pynlme (SUND) | – | 271.63 †1e-10 | – |
+| FOCE | pynlme (SUND) | – | 271.68 †1e-12 | – |
 | FOCE | nlmixr2 (FOCEi, rxode2) | 29.92 | 271.67 | 2576.12 |
 
 Fixed effects: largest difference (log scale) from pynlme's R mode (SUND) LME fit, as a check that the fits agree (also for SAEM, which reports no log-likelihood by default):
@@ -194,7 +193,7 @@ Fixed effects: largest difference (log scale) from pynlme's R mode (SUND) LME fi
 | Method | Program | 10 subjects | 100 subjects | 1000 subjects |
 |---|---|---|---|---|
 | LME | pynlme, MATLAB mode (SUND) | – | 0.000 | 0.000 |
-| FOCE | pynlme (SUND) | – | 0.067 | – |
+| FOCE | pynlme (SUND) | – | 0.087 | – |
 | SAEM | pynlme `nlmefitsa` (SUND) | 0.047 | 0.067 | 0.124 |
 
 Stiff target-mediated drug disposition model (3 parameters, 2 random effects, 3 states, log free drug observed; each program's stiff solver: SUND BDF, SciPy LSODA, ode15s, lsoda; 10 observations per subject); seconds per fit:
@@ -207,7 +206,7 @@ Stiff target-mediated drug disposition model (3 parameters, 2 random effects, 3 
 | LME | pynlme, R mode (SUND) | 0.050 | 1.13 | 11 |
 | LME | pynlme, R mode (SciPy) | 1.02 | 6.48 | 58 |
 | LME | R `nlme` (deSolve) | 7.28 †1e-12 | 84 †1e-12 | skipped |
-| FOCE | pynlme (SUND) | 18 †1e-10 | 311 †1e-10 | skipped |
+| FOCE | pynlme (SUND) | 24 †1e-12 | 281 †1e-12 | skipped |
 | FOCE | pynlme (SciPy) | 1053 | skipped | skipped |
 | FOCE | MATLAB `nlmefit` (ode15s) | > 3 h, stopped | not run | not run |
 | FOCE | nlmixr2 (FOCEi, rxode2) | 2.12 | 11 | 122 |
@@ -228,7 +227,7 @@ Log-likelihood each program reports, as a check that the fits are equally good (
 | LME | pynlme, R mode (SUND) | 57.58 | 482.68 | 4966.68 |
 | LME | pynlme, R mode (SciPy) | 57.58 | 482.68 | 4966.70 |
 | LME | R `nlme` (deSolve) | 57.58 †1e-12 | 482.68 †1e-12 | – |
-| FOCE | pynlme (SUND) | 57.57 †1e-10 | 481.47 †1e-10 | – |
+| FOCE | pynlme (SUND) | 57.58 †1e-12 | 482.68 †1e-12 | – |
 | FOCE | pynlme (SciPy) | 57.58 | – | – |
 | FOCE | nlmixr2 (FOCEi, rxode2) | 53.72 | 482.31 | 4890.82 |
 
@@ -239,7 +238,7 @@ Fixed effects: largest difference (log scale) from pynlme's R mode (SciPy) LME f
 | LME | pynlme, MATLAB mode (SUND) | 0.000 | 0.000 | 0.000 |
 | LME | pynlme, MATLAB mode (SciPy) | 0.000 | 0.000 | 0.000 |
 | LME | pynlme, R mode (SUND) | 0.000 | 0.000 | 0.000 |
-| FOCE | pynlme (SUND) | 0.001 | 0.007 | – |
+| FOCE | pynlme (SUND) | 0.000 | 0.002 | – |
 | FOCE | pynlme (SciPy) | 0.000 | – | – |
 | SAEM | pynlme `nlmefitsa` (SUND) | 0.006 | 0.029 | 0.001 |
 | SAEM | pynlme `nlmefitsa` (SciPy) | 0.006 | 0.013 | – |
@@ -282,8 +281,8 @@ At the largest size each program completed:
   equations and its outer gradient analytically; pynlme and MATLAB use finite
   differences, which re-solve every subject's conditional modes for each parameter.
   This is pynlme's main gap (SUND sensitivities will allow the same). MATLAB's FOCE
-  took 426 s on mm at 10 subjects (pynlme 78 s with SUND at 1e-12, 108 s with SciPy)
-  and did not finish tmdd at 10 subjects in 3.3 hours (pynlme 18 s with SUND at 1e-10,
+  took 426 s on mm at 10 subjects (pynlme 77 s with SUND at 1e-12, 108 s with SciPy)
+  and did not finish tmdd at 10 subjects in 3.3 hours (pynlme 24 s with SUND at 1e-12,
   1053 s with SciPy); we did not investigate why.
 - **SUND or SciPy**: with its new defaults (each subject its own integrator, subjects
   in parallel on all 16 threads) SUND is the faster in every comparison except the
@@ -303,8 +302,7 @@ At the largest size each program completed:
   finite, so MATLAB and pynlme's MATLAB mode both stop there ("MYFUN has returned Inf
   or NaN"); the R mode fits.
 - **Fit check**: within a method all programs reach the same fit (log-likelihood
-  tables), except MATLAB's FOCE, which ends lower, pynlme's FOCE with SUND on mmd and tmdd
-  at 1e-10 (slightly lower, see the ODE solvers above), nlmixr2's FOCEi on tmdd, which
+  tables), except MATLAB's FOCE, which ends lower, nlmixr2's FOCEi on tmdd, which
   reports a lower value (its FOCEi likelihood is a different approximation), and
   SAEM on mm with the default iterations (above).
 
