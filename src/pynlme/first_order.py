@@ -230,6 +230,8 @@ def fit_first_order(
     verbose: int = 0,
     error_model: str = "constant",
     error_param0=None,
+    outer: str = "lbfgsb",
+    fd_step: float = 1e-5,
 ) -> FirstOrderResult:
     """FO/FOCE estimation.
 
@@ -237,6 +239,10 @@ def fit_first_order(
     fixed observation weights 1/g(f), refresh the weights from the fit
     (at b = 0 for FO, at the conditional modes for FOCE), and repeat until
     they settle.
+
+    outer: "lbfgsb" optimises the outer problem with L-BFGS-B and a gradient by
+    central differences of the objective (relative step `fd_step`); "cobyqa"
+    with SciPy's derivative-free COBYQA (experimental).
     """
     from .lindstrom_bates import LinearizedLME, initial_factor, update_weights
 
@@ -279,7 +285,7 @@ def fit_first_order(
     def gradient(x):
         g = np.empty_like(x)
         for k in range(x.size):
-            h = 1e-5 * max(abs(x[k]), 1.0)
+            h = fd_step * max(abs(x[k]), 1.0)
             up, down = x.copy(), x.copy()
             up[k] += h
             down[k] -= h
@@ -289,6 +295,8 @@ def fit_first_order(
     bounds = [(None, None)] * f + factor.bounds
 
     def optimise(x0):
+        if outer == "cobyqa":
+            return optimise_cobyqa(x0)
         result = optimize.minimize(
             objective,
             x0,
@@ -314,6 +322,33 @@ def fit_first_order(
                 result = retry
         return result, converged
 
+    def optimise_cobyqa(x0):
+        # COBYQA builds quadratic models from objective values; an infinite
+        # value would break them, so failed points get a large finite one.
+        def finite(x):
+            value = objective(x)
+            return value if np.isfinite(value) else 1e10
+
+        result = optimize.minimize(
+            finite,
+            x0,
+            method="COBYQA",
+            bounds=optimize.Bounds(
+                [-np.inf if lo is None else lo for lo, _ in bounds],
+                [np.inf if hi is None else hi for _, hi in bounds],
+            ),
+            options={
+                "maxfev": 500 * x0.size,
+                "initial_tr_radius": 0.1,
+                "final_tr_radius": 1e-7,
+            },
+        )
+        if not hasattr(result, "nit"):
+            result.nit = result.nfev
+        return result, bool(result.success)
+
+    if outer not in ("lbfgsb", "cobyqa"):
+        raise ValueError(f"unknown outer optimiser {outer!r}")
     x = np.concatenate([beta, theta])
     ab = np.array([1.0, 1.0] if error_param0 is None else error_param0, dtype=float)
     reweight = error_model in ("proportional", "combined")
