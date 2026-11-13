@@ -277,10 +277,13 @@ At the largest size each program completed:
   iterations, at 100 subjects), so it is a property of the default settings, not of
   pynlme or the solver. The SAEM times are for the default settings.
 - **ODE models, FOCE**: nlmixr2 is far ahead (14 s on mm, 36 s on mmd, 122 s on tmdd,
-  all at 1000 subjects). It computes the model's derivatives from sensitivity
-  equations and its outer gradient analytically; pynlme and MATLAB use finite
-  differences, which re-solve every subject's conditional modes for each parameter.
-  This is pynlme's main gap (SUND sensitivities will allow the same). MATLAB's FOCE
+  all at 1000 subjects). With its defaults (as run here) it computes the model's
+  derivatives in the inner problem from sensitivity equations and optimises the
+  outer problem without derivatives (`bobyqa`), so it neither differentiates the ODE
+  solution numerically nor re-solves every subject's conditional modes for each
+  parameter. pynlme and MATLAB take finite differences at both levels; pynlme's outer
+  gradient by central differences costs two full inner solves per parameter. This is
+  pynlme's main gap (SUND sensitivities will allow the same). MATLAB's FOCE
   took 426 s on mm at 10 subjects (pynlme 77 s with SUND at 1e-12, 108 s with SciPy)
   and did not finish tmdd at 10 subjects in 3.3 hours (pynlme 24 s with SUND at 1e-12,
   1053 s with SciPy); we did not investigate why.
