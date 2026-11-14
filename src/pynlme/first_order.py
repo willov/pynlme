@@ -261,7 +261,12 @@ def fit_first_order(
         factor, factor.from_matrix(initial_factor(model, J0)), tight=False
     )
 
-    state = {"U": np.zeros((m, r)), "weights": None}
+    # The inner problem is warm-started from the conditional modes of the best
+    # point so far, not of the last one evaluated: after a trial point far from
+    # the optimum (a long line-search step), its modes are a poor start, the
+    # inner iteration can end elsewhere, and the objective would then depend on
+    # the order of evaluation (so would the two sides of a central difference).
+    state = {"U": np.zeros((m, r)), "best": np.inf, "weights": None}
 
     def modes(beta_x, L):
         if not conditional:
@@ -279,7 +284,8 @@ def fit_first_order(
             return np.inf
         if not np.isfinite(logl):
             return np.inf
-        state["U"] = U
+        if -logl < state["best"]:
+            state["U"], state["best"] = U, -logl
         return -logl
 
     def gradient(x):
@@ -295,6 +301,7 @@ def fit_first_order(
     bounds = [(None, None)] * f + factor.bounds
 
     def optimise(x0):
+        state["best"] = np.inf  # the weights, and with them the objective, changed
         if outer == "cobyqa":
             return optimise_cobyqa(x0)
         result = optimize.minimize(

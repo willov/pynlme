@@ -21,6 +21,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `sund_model`: an integrator failure gives non-finite predictions only for that
   subject with `split_components=True`, not for its whole batch.
 
+### Fixed
+
+- FOCE: each objective evaluation warm-starts the subjects' conditional modes from
+  those of the best point so far, not of the last point evaluated. After a far trial
+  point the objective could change at the same parameters, and L-BFGS-B then stopped
+  early: on a 6-parameter PK/PD ODE model after one iteration, at log-likelihood 115
+  against the optimum's 251 (`validation/foce_outer`).
+
+### Added
+
+- `fit_first_order(outer="cobyqa")` (experimental, not yet an `nlmefit` option): the
+  derivative-free COBYQA for FOCE's outer problem, and `fd_step` for the default
+  L-BFGS-B's difference step. With SUND models at `rel_tol=1e-10` COBYQA reached the
+  optimum 7.5 to 9 times faster than the default at 1e-12 (`validation/foce_outer`).
+
 ## [0.5.1] - 2026-10-12
 
 ### Fixed
