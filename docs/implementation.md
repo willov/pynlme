@@ -83,9 +83,15 @@ Nelder-Mead; exponential by fitting `log y`.
 ## FO and FOCE
 
 Maximise the Gaussian marginal likelihood of the model linearised in `b` at `b_hat`
-(`0` for FO; conditional modes for FOCE, solved to near machine precision because the
-objective is differentiated numerically) over `beta` and `L` with L-BFGS-B, `sigma^2`
-profiled. Error models: the same outer reweighting loop as MATLAB.
+(`0` for FO; conditional modes for FOCE, solved to near machine precision) over `beta`
+and `L` with SciPy's derivative-free COBYQA, `sigma^2` profiled. COBYQA fits quadratic
+models to objective values in a trust region, so it needs no gradient (with ODE models
+a central-difference gradient amplifies the solution's noise at the solver tolerance)
+and fewer objective evaluations, each of which re-solves all conditional modes
+(`validation/foce_outer`). `outer_optimizer="lbfgsb"` uses L-BFGS-B with a
+central-difference gradient instead. Each evaluation warm-starts the conditional modes
+from those of the best point so far. Error models: the same outer reweighting loop as
+MATLAB.
 
 ## SAEM
 

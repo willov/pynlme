@@ -281,7 +281,10 @@ def nlmefit(
         ApproximationType "LME"/"RELME"/"FO"/"FOCE", ParamTransform, CovPattern
         (diagonal or full), FE/RE ParamsSelect, ConstDesign and GroupDesign,
         RefineBeta0 and Options (MaxIter, TolFun, TolX, Display). Other options raise
-        NotImplementedError.
+        NotImplementedError. ``outer_optimizer`` (FO/FOCE, no MATLAB name) picks
+        the optimiser of the outer problem: ``"cobyqa"`` (default; derivative-free)
+        or ``"lbfgsb"`` (L-BFGS-B with a central-difference gradient, the
+        default before 0.5.2).
 
     Returns
     -------
@@ -331,6 +334,16 @@ def nlmefit(
             "pnls_tol, pnls_max_iter and min_scale apply to R's nlme iteration "
             "(compat='r', LME/RELME, constant or exponential error model)"
         )
+    outer = parsed.get("outer_optimizer")
+    if outer is not None:
+        if approx not in ("FO", "FOCE"):
+            raise NotImplementedError(
+                "outer_optimizer applies to ApproximationType 'FO' and 'FOCE'"
+            )
+        if str(outer).lower() not in ("cobyqa", "lbfgsb"):
+            raise ValueError(
+                f"outer_optimizer must be 'cobyqa' or 'lbfgsb', not {outer!r}"
+            )
     options = _make_options(parsed)
     X, y, group, V, beta0 = validate_inputs(X, y, group, V, beta0, options.data_format)
 
@@ -370,6 +383,7 @@ def nlmefit(
             conditional=approx == "FOCE",
             error_model=error_model,
             error_param0=options.error_parameters,
+            outer=(options.outer_optimizer or "cobyqa").lower(),
             **fit_args,
         )
     elif matlab_iteration:

@@ -101,6 +101,11 @@ class NLMEOptions:
     pnls_max_iter: int | None = None
     min_scale: float | None = None
 
+    # FO/FOCE outer problem (fixed effects and covariance): "cobyqa" (SciPy's
+    # derivative-free COBYQA) or "lbfgsb" (L-BFGS-B with a central-difference
+    # gradient). None: "cobyqa".
+    outer_optimizer: str | None = None
+
 
 @dataclass
 class SAEMOptions:

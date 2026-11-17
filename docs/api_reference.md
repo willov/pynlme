@@ -58,6 +58,7 @@ both.
 | `OptimFun` | | | `"fminsearch"` (MATLAB's default); `"fminunc"` raises |
 | `DataFormat` | `data_format` | from `y` | `"stacked"` or `"grouped"` |
 | | `compat` | `"matlab"` | `"matlab"` or `"r"` reporting conventions (below) |
+| | `outer_optimizer` | `"cobyqa"` | FO/FOCE outer problem: `"cobyqa"` (SciPy's derivative-free COBYQA) or `"lbfgsb"` (L-BFGS-B with a central-difference gradient, the default before 0.5.2) |
 
 Options that are not implemented (`FEObsDesign`, `REObsDesign`, block `CovPattern`)
 raise `NotImplementedError`; unknown options raise `TypeError`. Nothing is silently

@@ -20,6 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`batch_size` 16, one thread), the cheapest per subject on small non-stiff models.
 - `sund_model`: an integrator failure gives non-finite predictions only for that
   subject with `split_components=True`, not for its whole batch.
+- FO/FOCE: the outer problem is optimised by SciPy's derivative-free COBYQA instead of
+  L-BFGS-B with a central-difference gradient; `outer_optimizer="lbfgsb"` restores
+  L-BFGS-B. With SUND models at `rel_tol=1e-10` COBYQA reached the optimum 7.5 to 9
+  times faster than L-BFGS-B at 1e-12, the tolerance L-BFGS-B needed
+  (`validation/foce_outer`); on closed-form models it reaches the same optimum
+  (log-likelihood within 3e-5 on the MATLAB reference cases) and was 2 to 2.5 times
+  faster on the scaling benchmark's oral model.
 
 ### Fixed
 
@@ -28,13 +35,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   point the objective could change at the same parameters, and L-BFGS-B then stopped
   early: on a 6-parameter PK/PD ODE model after one iteration, at log-likelihood 115
   against the optimum's 251 (`validation/foce_outer`).
-
-### Added
-
-- `fit_first_order(outer="cobyqa")` (experimental, not yet an `nlmefit` option): the
-  derivative-free COBYQA for FOCE's outer problem, and `fd_step` for the default
-  L-BFGS-B's difference step. With SUND models at `rel_tol=1e-10` COBYQA reached the
-  optimum 7.5 to 9 times faster than the default at 1e-12 (`validation/foce_outer`).
 
 ## [0.5.1] - 2026-10-12
 

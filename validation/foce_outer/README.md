@@ -1,19 +1,21 @@
 # FOCE outer optimiser
 
-FOCE's outer problem (fixed effects and random-effects covariance) is optimised by
+FOCE's outer problem (fixed effects and random-effects covariance) was optimised by
 L-BFGS-B with a gradient by central differences of the objective (relative step
 1e-5); every objective evaluation re-solves all subjects' conditional modes. With
 SUND ODE models this needs `rel_tol=1e-12` (see the
 [scaling benchmark](../scaling/README.md)): SUND's solution is not smooth in the
-parameters at the tolerance level, and the differences amplify that. `run.py`
+parameters at the tolerance level, and the differences amplify that. After this
+comparison COBYQA became the default (`outer_optimizer="cobyqa"`;
+`outer_optimizer="lbfgsb"` gives L-BFGS-B). `run.py`
 compares, on models with more parameters than the scaling benchmark's:
 
-- L-BFGS-B, step 1e-5 (the default), at `rel_tol` 1e-12 and 1e-10;
+- L-BFGS-B, step 1e-5 (the default before 0.5.2), at `rel_tol` 1e-12 and 1e-10;
 - L-BFGS-B, step 5e-4 (about the cube root of the solution's noise at 1e-10, the
   step that balances noise and truncation error), at 1e-10;
 - SciPy's derivative-free COBYQA (quadratic models from objective values, trust
   region; the BOBYQA family, as nlmixr2's default `bobyqa` outer optimiser), at
-  1e-10 and 1e-12. In `fit_first_order` as `outer="cobyqa"`.
+  1e-10 and 1e-12.
 
 Cases (simulated, 30 subjects, the same data for every method; SUND, all cores):
 
@@ -38,17 +40,28 @@ warm-start fix below, SUND 2.14.1, SciPy 1.18.1):
 | pkpd_full (16) | 463 s, 4291, -0.000 | 172 s, 2410, **-0.98** | 104 s, 1453, -0.010 | **62 s**, 799, -0.007 | 136 s, 1014, 0 |
 | tmdd4 (7) | 195 s, 1201, -0.000 | 131 s, 1306, **-4.82** | 57 s, 541, -0.000 | **22 s**, 209, -0.001 | 43 s, 238, 0 |
 
-- The default (L-BFGS-B, step 1e-5) needs 1e-12, as on the scaling benchmark's
+- L-BFGS-B with step 1e-5 (the former default) needs 1e-12, as on the scaling benchmark's
   models; at 1e-10 it stops early (fixed effects up to 0.06 off on the log scale,
   variances up to 84 % off on tmdd4).
 - COBYQA at 1e-10 reaches the optimum (within 0.01 in log-likelihood; fixed
   effects within 0.003, variances within 3 %) with about 5.5 times fewer objective
-  evaluations than the default at 1e-12, and is 7.5 to 9 times faster. At 1e-12 it
+  evaluations than L-BFGS-B at 1e-12, and is 7.5 to 9 times faster. At 1e-12 it
   reaches the best fit of every case. Its evaluations grow with the number of
   parameters (288 for 10, 799 for 16), as do L-BFGS-B's.
 - The larger difference step lets L-BFGS-B work at 1e-10 too (1.6 to 4.5 times
-  faster than the default at 1e-12), but it needs 1.8 to 5.3 times COBYQA's
+  faster than with step 1e-5 at 1e-12), but it needs 1.8 to 5.3 times COBYQA's
   evaluations.
+
+## Closed-form models
+
+On the MATLAB reference cases (`tests/validation/test_matlab_references.py`: FO and
+FOCE on indomethacin, theophylline with and without a weight covariate, orange trees
+and a linear model, and FOCE with proportional, combined and exponential error on
+theophylline and orange trees) COBYQA reaches L-BFGS-B's log-likelihood within 3e-5
+(at most 2e-6 lower), with fewer objective evaluations in 11 of the 16 cases (up to
+1.7 times more on indomethacin's FOCE). On the scaling benchmark's oral model it gives
+the same fit (log-likelihood within 2e-8) 2.2 to 2.6 times faster at 10, 100 and 1000
+subjects (2026-11-17, PC under load, both alike).
 
 ## Warm start of the inner problem
 

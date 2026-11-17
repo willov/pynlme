@@ -230,7 +230,7 @@ def fit_first_order(
     verbose: int = 0,
     error_model: str = "constant",
     error_param0=None,
-    outer: str = "lbfgsb",
+    outer: str = "cobyqa",
     fd_step: float = 1e-5,
 ) -> FirstOrderResult:
     """FO/FOCE estimation.
@@ -240,9 +240,13 @@ def fit_first_order(
     (at b = 0 for FO, at the conditional modes for FOCE), and repeat until
     they settle.
 
-    outer: "lbfgsb" optimises the outer problem with L-BFGS-B and a gradient by
-    central differences of the objective (relative step `fd_step`); "cobyqa"
-    with SciPy's derivative-free COBYQA (experimental).
+    outer: "cobyqa" optimises the outer problem with SciPy's derivative-free
+    COBYQA (quadratic models from objective values in a trust region); "lbfgsb"
+    with L-BFGS-B and a gradient by central differences of the objective
+    (relative step `fd_step`). COBYQA tolerates the noise of an ODE solution at
+    its tolerance level, which the differences amplify, and needs fewer
+    objective evaluations (each re-solves all conditional modes); see
+    validation/foce_outer.
     """
     from .lindstrom_bates import LinearizedLME, initial_factor, update_weights
 

@@ -337,3 +337,36 @@ def test_unknown_option_suggests_the_closest_name():
 
     with pytest.raises(TypeError, match="Did you mean 'ParamTransform'"):
         nlmefit(t, y, group, None, model, [1.0, 0.3], ParamTransfrom=[0, 1])
+
+
+@pytest.mark.parametrize("approx", ["FO", "FOCE"])
+def test_outer_optimizers_reach_the_same_optimum(approx):
+    """FO/FOCE's outer problem: COBYQA (the default) and L-BFGS-B
+    (outer_optimizer="lbfgsb") reach the same optimum on a smooth model."""
+    c = theoph()
+    fits = {
+        outer: nlmefit(
+            c.X,
+            c.y,
+            c.group,
+            c.V,
+            c.modelfun,
+            c.beta0,
+            **c.kwargs,
+            ApproximationType=approx,
+            **({} if outer is None else {"outer_optimizer": outer}),
+        )
+        for outer in (None, "cobyqa", "lbfgsb")
+    }
+    np.testing.assert_array_equal(fits[None][0], fits["cobyqa"][0])
+    assert fits["cobyqa"][2].logl == pytest.approx(fits["lbfgsb"][2].logl, abs=1e-6)
+    np.testing.assert_allclose(fits["cobyqa"][0], fits["lbfgsb"][0], atol=1e-4)
+
+
+def test_outer_optimizer_is_checked():
+    c = theoph()
+    args = (c.X, c.y, c.group, c.V, c.modelfun, c.beta0)
+    with pytest.raises(ValueError, match="outer_optimizer"):
+        nlmefit(*args, **c.kwargs, ApproximationType="FOCE", outer_optimizer="bfgs")
+    with pytest.raises(NotImplementedError, match="FO' and 'FOCE"):
+        nlmefit(*args, **c.kwargs, outer_optimizer="lbfgsb")
